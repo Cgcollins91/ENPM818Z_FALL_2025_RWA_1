@@ -243,7 +243,6 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
     return lidar_clusters, Z_clusters
 
 
-
 def plot_lidar_3d(lidar_clusters):
     """
     Plot Lidar points in 3-D using open3D
@@ -280,21 +279,21 @@ training_path  = working_folder + '/training/'
 
 file_index     = 200
 
-test_img_file   = get_file_path(training_path, file_index, 'image_2')
-test_calib_file = get_file_path(training_path, file_index, 'calib')
-test_velo_file  = get_file_path(training_path, file_index, 'velodyne')
-test_label_file = get_file_path(training_path, file_index, 'label_2')
+img_file   = get_file_path(training_path, file_index, 'image_2')
+calib_file = get_file_path(training_path, file_index, 'calib')
+velo_file  = get_file_path(training_path, file_index, 'velodyne')
+label_file = get_file_path(training_path, file_index, 'label_2')
 
-img    = load_kitti_image(test_img_file)
-lidar  = load_kitti_lidar_scan(test_velo_file)
-calib  = load_kitti_calibration(test_calib_file)
-labels = load_kitti_labels(test_label_file)
+img    = load_kitti_image(img_file)
+lidar  = load_kitti_lidar_scan(velo_file)
+calib  = load_kitti_calibration(calib_file)
+labels = load_kitti_labels(label_file)
 
 # Print Homogenous Transformation Matrices
 print_calib_matrices(calib)
 
 # Test Labels
-get_labels(test_label_file)
+get_labels(label_file)
 
 # Get Camerea image width and height
 h, w = len(img[:, 0, 0]), len(img[0, :, 0])
