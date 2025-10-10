@@ -1,0 +1,17 @@
+name: carla
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10           # CARLA and Open3D are most stable with 3.8–3.10
+  - pip
+  - numpy<2.0             # ensures NumPy 1.x (e.g. 1.26.x)
+  - opencv                # OpenCV 4.x will be installed automatically
+  - matplotlib
+  - open3d=0.18.*         # compatible with numpy<2.0
+  - scipy
+  - pandas
+  - tqdm
+  - pip:
+      - pygame            # often needed for CARLA clients
+      - carla             # optional: only works if wheel available for your platform

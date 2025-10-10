@@ -198,6 +198,8 @@ def plot_hist(Z_clusters, lidar_clusters, color='red'):
         axes[0,1].set_title(f"Cluster: {cluster_num} LiDAR Point Z (m)")
         axes[0,1].set_xlabel('Z (meters)')
         axes[0,1].set_ylabel('Frequency')
+# plot_hist(Z_clusters, lidar_clusters, color='red')
+# plot_hist(Z_filter,   lidar_filter,   color='blue')
 
         # Plot Histogram of LiDAR Depth Values
         axes[1,1].hist(Z_cluster, bins=50, color=color)
@@ -263,6 +265,98 @@ def plot_lidar_3d(lidar_clusters):
         vis1.update_renderer()
         
     vis1.destroy_window()
+
+# %% Part D – 3D Bounding Box Estimation & Visualization
+
+def estimate_bounding_boxes(lidar_clusters, obb=False):
+    """
+    Compute 3D bounding boxes (AABB or OBB) for each LiDAR cluster.
+    """
+    boxes = []
+
+    for cluster in lidar_clusters:
+        if len(cluster) < 40:
+            continue  # skip small/noisy clusters
+
+        # Convert to Open3D point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
+
+        if obb:
+            obb_box = pcd.get_oriented_bounding_box()
+            box = {
+                "type": "OBB",
+                "center_m": obb_box.center.tolist(),
+                "dims_m": obb_box.extent.tolist(),
+                "yaw_rad": float(np.arctan2(obb_box.R[0, 2], obb_box.R[2, 2])),
+                "box_obj": obb_box
+            }
+        else:
+            aabb_box = pcd.get_axis_aligned_bounding_box()
+            box = {
+                "type": "AABB",
+                "center_m": aabb_box.get_center().tolist(),
+                "dims_m": (aabb_box.get_extent()).tolist(),
+                "yaw_rad": 0.0,
+                "box_obj": aabb_box
+            }
+
+        boxes.append(box)
+
+    return boxes
+
+def plot_lidar_3d_with_boxes(lidar_clusters, boxes):
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name='3D Boxes', width=960, height=540, left=100, top=100)
+
+    # Add LiDAR clusters
+    for cluster in lidar_clusters:
+        pc = o3d.geometry.PointCloud()
+        pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
+        vis.add_geometry(pc)
+
+    # Add bounding boxes
+    for box in boxes:
+        bbox = box["box_obj"]
+        bbox.color = (1, 0, 0) if box["type"] == "AABB" else (0, 1, 0)
+        vis.add_geometry(bbox)
+
+    while True:
+        vis.update_geometry(None)
+        if not vis.poll_events():
+            break
+        vis.update_renderer()
+
+    vis.destroy_window()
+
+def project_boxes_to_image(boxes, calib, img):
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.imshow(img)
+
+    for box in boxes:
+        corners_3d = np.asarray(box["box_obj"].get_box_points())
+        # Homogeneous
+        ones = np.ones((corners_3d.shape[0], 1))
+        corners_h = np.hstack((corners_3d, ones))
+
+        # Project without filtering
+        X_h_cam = np.dot(calib['Tr_velo_to_cam'], corners_h.T)
+        X_h_rect = np.dot(calib['R0_rect'], X_h_cam)
+        Y = np.dot(calib['P2'], X_h_rect)
+        u = Y[0, :] / Y[2, :]
+        v = Y[1, :] / Y[2, :]
+
+        # Draw box wireframe
+        edges = [
+            (0,1),(1,2),(2,3),(3,0),  # bottom
+            (4,5),(5,6),(6,7),(7,4),  # top
+            (0,4),(1,5),(2,6),(3,7)   # sides
+        ]
+        for (i, j) in edges:
+            ax.plot([u[i], u[j]], [v[i], v[j]], color='lime', linewidth=1.5)
+
+    plt.title("Projected 3D Boxes on Image")
+    plt.show()
 
 # %% Load img, calib, velo, and label file for file_index input
 #    Print Homogenous Calibration Matrices
@@ -345,7 +439,14 @@ cluster_size_filter = [len(cluster) for cluster in Z_filter]
 print("Num Points After Additional Filtering")
 print(cluster_size_filter)
 
-plot_hist(Z_clusters, lidar_clusters, color='red')
-plot_hist(Z_filter,   lidar_filter,   color='blue')
+# plot_hist(Z_clusters, lidar_clusters, color='red')
+# plot_hist(Z_filter,   lidar_filter,   color='blue')
 
 
+# %% Part D – 3D Bounding Box Estimation & Visualization
+
+boxes = estimate_bounding_boxes(lidar_filter, obb=False)  # use obb=True for bonus
+print("Estimated", len(boxes), "3D boxes")
+
+plot_lidar_3d_with_boxes(lidar_filter, boxes)
+project_boxes_to_image(boxes, calib, img)
