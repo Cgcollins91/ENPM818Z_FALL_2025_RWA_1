@@ -265,8 +265,9 @@ def plot_lidar_3d(lidar_clusters):
         vis1.update_renderer()
         
     vis1.destroy_window()
+    
 
-# %% Part D – 3D Bounding Box Estimation & Visualization
+#  Part D – 3D Bounding Box Estimation & Visualization
 
 def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
@@ -305,15 +306,27 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
 
     return boxes
 
-def plot_lidar_3d_with_boxes(lidar_clusters, boxes):
+
+def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name='3D Boxes', width=960, height=540, left=100, top=100)
+    cmap = plt.get_cmap("jet") 
+    cluster_colors = cmap(np.linspace(0, 1, len(lidar_clusters)))[:, :3]
+    
+    # Plot Lidar Points
+    pc_gray = o3d.geometry.PointCloud()
+    pc_gray.points = o3d.utility.Vector3dVector(lidar[:, :3])
+    pc_gray.paint_uniform_color([0.5, 0.5, 0.5])
+    vis.add_geometry(pc_gray)
 
     # Add LiDAR clusters
-    for cluster in lidar_clusters:
+    for i, cluster in enumerate(lidar_clusters):
         pc = o3d.geometry.PointCloud()
         pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
+        pc.paint_uniform_color(cluster_colors[i])
         vis.add_geometry(pc)
+        
+
 
     # Add bounding boxes
     for box in boxes:
@@ -328,6 +341,7 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes):
         vis.update_renderer()
 
     vis.destroy_window()
+
 
 def project_boxes_to_image(boxes, calib, img):
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -371,7 +385,7 @@ def project_boxes_to_image(boxes, calib, img):
 working_folder = os.getcwd()
 training_path  = working_folder + '/training/'
 
-file_index     = 200
+file_index     = 252
 
 img_file   = get_file_path(training_path, file_index, 'image_2')
 calib_file = get_file_path(training_path, file_index, 'calib')
@@ -448,5 +462,5 @@ print(cluster_size_filter)
 boxes = estimate_bounding_boxes(lidar_filter, obb=False)  # use obb=True for bonus
 print("Estimated", len(boxes), "3D boxes")
 
-plot_lidar_3d_with_boxes(lidar_filter, boxes)
+plot_lidar_3d_with_boxes(lidar_filter, boxes, lidar)
 project_boxes_to_image(boxes, calib, img)
