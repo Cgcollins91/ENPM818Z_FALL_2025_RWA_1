@@ -276,8 +276,8 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
     boxes = []
 
     for cluster in lidar_clusters:
-        if len(cluster) < 40:
-            continue  # skip small/noisy clusters
+        # if len(cluster) < 40:
+        #     continue  # skip small/noisy clusters
 
         # Convert to Open3D point cloud
         pcd = o3d.geometry.PointCloud()
@@ -325,13 +325,11 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
         pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
         pc.paint_uniform_color(cluster_colors[i])
         vis.add_geometry(pc)
-        
-
 
     # Add bounding boxes
-    for box in boxes:
+    for i, box in enumerate(boxes):
         bbox = box["box_obj"]
-        bbox.color = (1, 0, 0) if box["type"] == "AABB" else (0, 1, 0)
+        bbox.color = cluster_colors[i]
         vis.add_geometry(bbox)
 
     while True:
@@ -344,30 +342,39 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
 
 
 def project_boxes_to_image(boxes, calib, img):
+    
+    cmap = plt.get_cmap("jet") 
+    box_colors = cmap(np.linspace(0, 1, len(boxes)))[:, :3]
+    
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.imshow(img)
 
-    for box in boxes:
+    for box_i, box in enumerate(boxes):
         corners_3d = np.asarray(box["box_obj"].get_box_points())
         # Homogeneous
         ones = np.ones((corners_3d.shape[0], 1))
         corners_h = np.hstack((corners_3d, ones))
 
         # Project without filtering
-        X_h_cam = np.dot(calib['Tr_velo_to_cam'], corners_h.T)
+        X_h_cam  = np.dot(calib['Tr_velo_to_cam'], corners_h.T)
         X_h_rect = np.dot(calib['R0_rect'], X_h_cam)
-        Y = np.dot(calib['P2'], X_h_rect)
+        Y        = np.dot(calib['P2'], X_h_rect)
+        depth    = Y[2,:]
+        
         u = Y[0, :] / Y[2, :]
         v = Y[1, :] / Y[2, :]
 
         # Draw box wireframe
         edges = [
-            (0,1),(1,2),(2,3),(3,0),  # bottom
-            (4,5),(5,6),(6,7),(7,4),  # top
-            (0,4),(1,5),(2,6),(3,7)   # sides
+            (0, 1), (1, 7), (7, 2), (2, 0),  # Bottom face
+            (3, 6), (6, 4), (4, 5), (5, 3),  # Top face
+            (0, 3), (1, 6), (7, 4), (2, 5)   # Connecting sides
         ]
+
         for (i, j) in edges:
-            ax.plot([u[i], u[j]], [v[i], v[j]], color='lime', linewidth=1.5)
+            if depth[i] > 0 and depth[j] > 0:
+                ax.plot([u[i], u[j]], [v[i], v[j]], color=box_colors[box_i], linewidth=1.5)
+
 
     plt.title("Projected 3D Boxes on Image")
     plt.show()
@@ -385,7 +392,7 @@ def project_boxes_to_image(boxes, calib, img):
 working_folder = os.getcwd()
 training_path  = working_folder + '/training/'
 
-file_index     = 252
+file_index     = 250
 
 img_file   = get_file_path(training_path, file_index, 'image_2')
 calib_file = get_file_path(training_path, file_index, 'calib')
@@ -416,6 +423,7 @@ plot_img_and_lidar(uv, Z_cam, img, labels, bound_mask, Z_mask, filter=True)
 
 # %% Get Lidar Points within bounding boxs from labels file:
 
+
 lidar_clusters, Z_clusters = get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask)
 
 
@@ -438,7 +446,7 @@ Z_filter, lidar_filter = [], []
 for Z_cluster, lidar_cluster in zip(Z_clusters, lidar_clusters):
     Z_cluster_avg = np.sum(Z_cluster)/len(Z_cluster)
     Z_cluster_std = np.std(Z_cluster)
-    delta         = 3    # 3*Z_cluster_std
+    delta         =  2*Z_cluster_std
 
     Z_avg_mask    = ((Z_cluster_avg - delta) <= Z_cluster) & (Z_cluster <= (Z_cluster_avg + delta))
 
