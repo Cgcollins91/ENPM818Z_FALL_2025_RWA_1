@@ -299,12 +299,19 @@ def visualize_2d_detections(img, labels):
 def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
     Compute 3D bounding boxes (AABB or OBB) for each LiDAR cluster.
+    
+    Inputs:
+        lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
+        obb:            Boolean flag to compute Oriented Bounding Boxes (True) or Axis-Aligned Bounding Boxes (False)
+        
+    Returns:
+        boxes:          List of dictionaries with bounding box parameters and open3d box object
     """
 
     boxes = []
     for cluster in lidar_clusters:
         if obb:
-            cluster_3d = cluster[:, :3] # Isolate 3-d component
+            cluster_3d = cluster[:, :3] # Isolate X, Y, Z component (ignore reflectance)
             
             # Get Mean and Covariance of Cluster:
             centroid   = np.mean(cluster_3d, axis=0)
@@ -316,12 +323,12 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
             # Sort Eigenvectors by magnitude of eigenvalues to ensure primary axis is axis with largest variance
             sort_indices    = np.argsort(eigenvalues)[::-1]
             rotation_matrix = eigenvectors[:, sort_indices]
-            
-            if np.linalg.det(rotation_matrix) < 0: # Ensure Right Handed Coordinate System 
-                rotation_matrix[:, -1] *= -1
-                    
-            primary_axis = rotation_matrix[:, 0] # After sorting by eigenvalue our primary axis is first column
-            
+
+            if np.linalg.det(rotation_matrix) < 0: # Ensure Right Handed Coordinate System, if det <0, rotation matrix is reflection
+                rotation_matrix[:, -1] *= -1       # Flip Direction of last column if left-handed, flipping single axis of left-handed converts back to right-handed
+
+            primary_axis = rotation_matrix[:, 0]   # After sorting by eigenvalue our primary axis is first column
+
             # Project Cluster points onto PCA axes
             projected_points = (cluster_3d - centroid) @ rotation_matrix
 
@@ -330,9 +337,10 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
             max_bound = np.max(projected_points, axis=0)
             dims      = max_bound - min_bound
             
+            # Create open3d OBB object:
             obb = o3d.geometry.OrientedBoundingBox(centroid, rotation_matrix, dims)
             
-            box = {
+            box = {                       # Create JSON output parmeters for each cluster
                 "type"    : "OBB",
                 "center_m": centroid,
                 "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
@@ -360,9 +368,12 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
 
 def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     """
-    Visualization - 3D Scene View.
-    Renders the entire raw LiDAR scene overlaid with the estimated 3D bounding boxes
-    (AABB or OBB) around their respective colored point clusters.
+    Plot Lidar points in 3-D using open3D with bounding boxes
+    
+    Inputs:
+        lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
+        boxes:          List of dictionaries with bounding box parameters and open3d box object
+        lidar:          Unfiltered lidar points for background context 
     """
 
     vis = o3d.visualization.Visualizer()
@@ -370,13 +381,13 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     cmap = plt.get_cmap("jet") 
     cluster_colors = cmap(np.linspace(0, 1, len(lidar_clusters)))[:, :3]
     
-    # Plot Lidar Points
+    # Plot Background Lidar Points in Gray
     pc_gray = o3d.geometry.PointCloud()
     pc_gray.points = o3d.utility.Vector3dVector(lidar[:, :3])
     pc_gray.paint_uniform_color([0.5, 0.5, 0.5])
     vis.add_geometry(pc_gray)
 
-    # Add LiDAR clusters
+    # Add LiDAR clusters within bounding boxes
     for i, cluster in enumerate(lidar_clusters):
         pc = o3d.geometry.PointCloud()
         pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
@@ -399,9 +410,13 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
 
 def project_boxes_to_image(boxes, calib, img):
     """
-    Visualization - 2D Image View.
-    Projects the 8 corner points of each estimated 3D bounding box back onto the 
-    camera image plane and draws the resulting wireframe.
+    Project 3D bounding boxes to camera image plane and plot.
+    
+    Inputs:
+        boxes: List of dictionaries with bounding box parameters and open3d box object
+        calib: Dictionary with calibration matrices
+        img:   Camera image as HxWx3 numpy array
+        
     """
 
     cmap = plt.get_cmap("jet") 
@@ -425,7 +440,7 @@ def project_boxes_to_image(boxes, calib, img):
         u = Y[0, :] / Y[2, :]
         v = Y[1, :] / Y[2, :]
 
-        # Draw box wireframe
+        # Create edges aligned to open3d box point ordering
         edges = [
             (0, 1), (1, 7), (7, 2), (2, 0),  # Bottom face
             (3, 6), (6, 4), (4, 5), (5, 3),  # Top face
