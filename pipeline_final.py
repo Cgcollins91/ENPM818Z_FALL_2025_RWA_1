@@ -277,7 +277,7 @@ def visualize_2d_detections(img, labels):
     Plots the image with 2D bounding boxes overlaid.
     """
 
-    ax1 = plt.subplots(1, figsize=(12, 6))
+    fig, ax1 = plt.subplots(1, figsize=(12, 6))
 
     # Plot Camera Image and Bounding Boxes
     ax1.imshow(img)         # Plot camera RGB
@@ -302,35 +302,60 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
 
     boxes = []
-
     for cluster in lidar_clusters:
-        # if len(cluster) < 40:
-        #     continue  # skip small/noisy clusters
-
-        # Convert to Open3D point cloud
-        pcd = o3d.geometry.PointCloud()
-        pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
-
         if obb:
-            obb_box = pcd.get_oriented_bounding_box()
+            cluster_3d = cluster[:, :3] # Isolate 3-d component
+            
+            # Get Mean and Covariance of Cluster:
+            centroid   = np.mean(cluster_3d, axis=0)
+            cov_matrix = np.cov(cluster_3d, rowvar=False)
+
+            # Get principle components -- Eigenvectors / Eigenvalues
+            eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)    
+            
+            # Sort Eigenvectors by magnitude of eigenvalues to ensure primary axis is axis with largest variance
+            sort_indices    = np.argsort(eigenvalues)[::-1]
+            rotation_matrix = eigenvectors[:, sort_indices]
+            
+            if np.linalg.det(rotation_matrix) < 0: # Ensure Right Handed Coordinate System 
+                rotation_matrix[:, -1] *= -1
+                    
+            primary_axis = rotation_matrix[:, 0] # After sorting by eigenvalue our primary axis is first column
+            
+            # Project Cluster points onto PCA axes
+            projected_points = (cluster_3d - centroid) @ rotation_matrix
+
+            # Get bounding box min / max after projection along each axes
+            min_bound = np.min(projected_points, axis=0)
+            max_bound = np.max(projected_points, axis=0)
+            dims      = max_bound - min_bound
+            
+            obb = o3d.geometry.OrientedBoundingBox(centroid, rotation_matrix, dims)
+            
             box = {
-                "type": "OBB",
-                "center_m": obb_box.center.tolist(),
-                "dims_m": obb_box.extent.tolist(),
-                "yaw_rad": float(np.arctan2(obb_box.R[0, 2], obb_box.R[2, 2])),
-                "box_obj": obb_box
+                "type"    : "OBB",
+                "center_m": centroid,
+                "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
+                "yaw_rad" : float(np.arctan2(primary_axis[1], primary_axis[0])),
+                "box_obj" : obb,
+                "n_points": len(cluster[:])
             }
+            
         else:
+            # PLEASE UPDATE FOR AABB
+            pcd        = o3d.geometry.PointCloud()
+            pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
             aabb_box = pcd.get_axis_aligned_bounding_box()
             box = {
-                "type": "AABB",
+                "type"    : "AABB",
                 "center_m": aabb_box.get_center().tolist(),
-                "dims_m": (aabb_box.get_extent()).tolist(),
-                "yaw_rad": 0.0,
-                "box_obj": aabb_box
+                "dims_m"  : (aabb_box.get_extent()).tolist(),
+                "yaw_rad" : 0.0,
+                "box_obj" : aabb_box
             }
-        boxes.append(box)
 
+        boxes.append(box)
+        
     return boxes
 
 def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
@@ -387,9 +412,9 @@ def project_boxes_to_image(boxes, calib, img):
 
     for box_i, box in enumerate(boxes):
         corners_3d = np.asarray(box["box_obj"].get_box_points())
-        # Homogeneous
-        ones = np.ones((corners_3d.shape[0], 1))
-        corners_h = np.hstack((corners_3d, ones))
+
+        ones       = np.ones((corners_3d.shape[0], 1))
+        corners_h  = np.hstack((corners_3d, ones))
 
         # Project without filtering
         X_h_cam  = np.dot(calib['Tr_velo_to_cam'], corners_h.T)
@@ -410,6 +435,7 @@ def project_boxes_to_image(boxes, calib, img):
         for (i, j) in edges:
             if depth[i] > 0 and depth[j] > 0:
                 ax.plot([u[i], u[j]], [v[i], v[j]], color=box_colors[box_i], linewidth=1.5)
+
 
     plt.title("Projected 3D Boxes on Image")
     plt.show()
@@ -535,4 +561,6 @@ if __name__ == '__main__':
     # T4: Visualization - 2D Image View and 3D Scene View
     project_boxes_to_image(boxes, calib, img)
     plot_lidar_3d_with_boxes(lidar_filter, boxes, lidar)
+
+    exit()
 
