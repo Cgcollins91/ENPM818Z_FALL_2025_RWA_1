@@ -203,7 +203,15 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
 
         lidar_filter = lidar[Z_and_box_mask, :]
         Z_filter     = Z_cam[Z_and_box_mask]
-        
+
+        # depth gating
+        median_depth = np.median(Z_filter)
+        depth_delta = 3
+        Z_depth_mask = ((median_depth - depth_delta) <= Z_filter) & (Z_filter <= (median_depth + depth_delta))
+
+        lidar_filter = lidar_filter[Z_depth_mask, :]
+        Z_filter = Z_filter[Z_depth_mask]
+
         Z_clusters.append(Z_filter)
         lidar_clusters.append(lidar_filter)
 
@@ -350,14 +358,19 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
             }
             
         else:
-            # PLEASE UPDATE FOR AABB
+            # Calculating boxes using AABB
             pcd        = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
-            aabb_box = pcd.get_axis_aligned_bounding_box()
+
+            min_values = pcd.get_min_bound()
+            max_values = pcd.get_max_bound()
+            dims = max_values - min_values
+            center = min_values + dims/2
+            aabb_box = o3d.geometry.AxisAlignedBoundingBox(min_values, max_values)
             box = {
                 "type"    : "AABB",
-                "center_m": aabb_box.get_center().tolist(),
-                "dims_m"  : (aabb_box.get_extent()).tolist(),
+                "center_m": center,
+                "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
                 "yaw_rad" : 0.0,
                 "box_obj" : aabb_box
             }
@@ -385,7 +398,6 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     pc_gray = o3d.geometry.PointCloud()
     pc_gray.points = o3d.utility.Vector3dVector(lidar[:, :3])
     pc_gray.paint_uniform_color([0.5, 0.5, 0.5])
-    vis.add_geometry(pc_gray)
 
     # Add LiDAR clusters within bounding boxes
     for i, cluster in enumerate(lidar_clusters):
@@ -398,9 +410,28 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     for i, box in enumerate(boxes):
         bbox = box["box_obj"]
         bbox.color = cluster_colors[i]
+        try:
+            pc_gray = pc_gray.crop(bbox, invert=True)
+        except:
+            pass
         vis.add_geometry(bbox)
 
+    vis.add_geometry(pc_gray)
+
     while True:
+        # set default view
+        # values found by manually zooming frame 100
+        view_controller = vis.get_view_control()
+        #view_controller.set_zoom(0.027500000000000253)
+        #view_controller.set_front([ -0.89516371137141304, -0.44561928839813425, -0.010265459137232251 ])
+        #view_controller.set_up([ -0.0029690917564122133, -0.017068595148887471, 0.99984991251376598 ])
+        #view_controller.set_lookat([ 9.9614291969435094, 4.7740428233735352, 1.2060055116059714 ])
+
+        view_controller.set_zoom(0.041333333333333319)
+        view_controller.set_front([ -0.999828848674019, 0.012677640915529876, -0.01347407807616945 ])
+        view_controller.set_up([ -0.013376751191763157, 0.0077307828706860348, 0.99988064163867074 ])
+        view_controller.set_lookat([ 11.165053455936269, -2.0651555632113086, 1.4834780701741086 ])
+
         vis.update_geometry(None)
         if not vis.poll_events():
             break
@@ -463,7 +494,7 @@ if __name__ == '__main__':
     working_folder = os.getcwd()
     training_path  = working_folder + '/training/'
 
-    file_index     = 200
+    file_index     = 250
 
     # ----------------------------------------------------
     # Part A: Setup & Data Loading

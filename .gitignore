@@ -2,3 +2,4 @@ training/
 testing/
 __pycache__/
 *.pyc
+/test.avi
