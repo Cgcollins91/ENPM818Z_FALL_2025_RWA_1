@@ -443,7 +443,7 @@ def project_boxes_to_image(boxes, calib, img):
 working_folder = os.getcwd()
 training_path  = working_folder + '/training/'
 
-file_index     = 250
+file_index     = 1500
 
 img_file   = get_file_path(training_path, file_index, 'image_2')
 calib_file = get_file_path(training_path, file_index, 'calib')
