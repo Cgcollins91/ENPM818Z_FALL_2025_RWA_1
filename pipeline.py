@@ -443,7 +443,7 @@ def project_boxes_to_image(boxes, calib, img):
 working_folder = os.getcwd()
 training_path  = working_folder + '/training/'
 
-file_index     = 1500
+file_index     = 200
 
 img_file   = get_file_path(training_path, file_index, 'image_2')
 calib_file = get_file_path(training_path, file_index, 'calib')
@@ -452,7 +452,7 @@ label_file = get_file_path(training_path, file_index, 'label_2')
 
 img    = load_kitti_image(img_file)
 lidar  = load_kitti_lidar_scan(velo_file)
-calib  = load_kitti_calibration(calib_file)
+calib  = load_kitti_calibration(calib_file) 
 labels = load_kitti_labels(label_file)
 
 # Print Homogenous Transformation Matrices
@@ -469,7 +469,6 @@ uv, Z_cam, bound_mask, Z_mask = project_lidar_to_image(lidar, calib, w, h)
 
 # Plot Lidar points on top of camera image
 plot_img_and_lidar(uv, Z_cam, img, labels, bound_mask, Z_mask, filter=True)
-
 
 
 # %% Get Lidar Points within bounding boxs from labels file:
