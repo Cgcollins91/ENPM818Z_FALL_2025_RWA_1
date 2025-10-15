@@ -33,7 +33,7 @@ def plot_lidar_3d_with_boxes_video(lidar_clusters, boxes, lidar):
 
     # Add LiDAR clusters within bounding boxes
     for i, cluster in enumerate(lidar_clusters):
-        pc = o3d.geometry.PointCloud()
+        pc        = o3d.geometry.PointCloud()
         pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
         pc.paint_uniform_color(cluster_colors[i])
         vis.add_geometry(pc)
@@ -41,7 +41,7 @@ def plot_lidar_3d_with_boxes_video(lidar_clusters, boxes, lidar):
 
     # Add bounding boxes
     for i, box in enumerate(boxes):
-        bbox = box["box_obj"]
+        bbox       = box["box_obj"]
         bbox.color = cluster_colors[i]
         try:
             pc_gray = pc_gray.crop(bbox, invert=True)
@@ -58,11 +58,12 @@ def plot_lidar_3d_with_boxes_video(lidar_clusters, boxes, lidar):
     view_controller.set_lookat([11.16, -2.06, 1.48])
 
     # Capture the image
-    vis.poll_events()
-    vis.update_renderer()
-    lidar_image = vis.capture_screen_float_buffer(do_render=True)
-    vis.destroy_window()
+    vis.poll_events()                                             # GUI Backend housekeeping
+    vis.update_renderer()                                         # Update frame rendering
+    lidar_image = vis.capture_screen_float_buffer(do_render=True) # Capture each frame pixel as float [0,1]
+    vis.destroy_window()                                          # Close window to free up memory
 
+    # Open3d returns float image in range [0,1], convert to uint8 [0,255] for OpenCV (RGB value)
     return (np.asarray(lidar_image) * 255).astype(np.uint8)
 
 
@@ -190,12 +191,12 @@ if __name__ == '__main__':
        
         combined_frame = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)          # Convert Matplotlib figure to BGR for OpenCV
         combined_frame = combined_frame.reshape(fig.canvas.get_width_height()[::-1] + (4,)) # Reshape to HxWx4
-        combined_frame = combined_frame[:, :, 1:]                                           # ARGB to RGB conversion by removing the alpha channel
+        combined_frame = combined_frame[:, :, 1:]                                           # Get only RGB channels (excluding alpha)
         combined_frame = cv2.cvtColor(combined_frame, cv2.COLOR_RGB2BGR)                    # Convert from RGB (Matplotlib) to BGR (OpenCV)
 
         video_writer.write(combined_frame) # Write the combined frame to video
         
-        plt.close(fig) # Close figure to free up memory
+        plt.close(fig)                     # Close figure to free up memory
         count_valid_frames += 1
         frame              += 1
   
