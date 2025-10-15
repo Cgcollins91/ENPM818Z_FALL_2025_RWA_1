@@ -4,7 +4,7 @@ import open3d as o3d
 import matplotlib.pyplot as plt
 import os
 
-from starter import  load_kitti_image, load_kitti_lidar_scan
+from starter  import load_kitti_image, load_kitti_lidar_scan
 from detector import load_kitti_labels
 from pipeline import get_labels, get_file_path, load_kitti_calibration, get_lidar_outliers
 from pipeline import get_bounding_box_lidar_points, project_lidar_to_image, estimate_bounding_boxes
@@ -150,7 +150,7 @@ if __name__ == '__main__':
             exit()
 
         if len(labels) == 0:
-            print(f"No label file found for index {frame}, skipping frame.")
+            print(f"No labels found for index (No Cars Detected) {frame}, skipping frame.")
             frame += 1
             continue
         
