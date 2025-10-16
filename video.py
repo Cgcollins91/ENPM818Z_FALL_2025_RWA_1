@@ -6,7 +6,7 @@ import os
 
 from starter  import load_kitti_image, load_kitti_lidar_scan
 from detector import load_kitti_labels
-from pipeline import get_labels, get_file_path, load_kitti_calibration, get_lidar_outliers
+from pipeline import get_labels, get_file_path, load_kitti_calibration, remove_lidar_outliers
 from pipeline import get_bounding_box_lidar_points, project_lidar_to_image, estimate_bounding_boxes
 
 def plot_lidar_3d_with_boxes_video(lidar_clusters, boxes, lidar):
@@ -116,13 +116,14 @@ def project_boxes_to_image_video(boxes, calib, img, ax):
 if __name__ == '__main__':
 
     # Configuration (Set this path to your KITTI training directory)
-    frame              = int(input("Enter Starting File Index (0-7380)"))
-    video_name         = f"output_video_{frame}_to_{frame+100}.avi"
-    working_folder     = os.getcwd()
-    training_path      = working_folder + '/training/'
-    fourcc             = cv2.VideoWriter.fourcc(*"MJPG") # Object to write video
-    video_writer       = cv2.VideoWriter(video_name, fourcc, 1, (1920*2, 1080), True)
-    count_valid_frames = 0
+    frame              = int(input("Enter Starting File Index (0-7380)"))             # Get Starting Frame index from user
+    video_name         = f"output_video_{frame}_to_{frame+100}.avi"                   # Initial video name (updated later)
+    working_folder     = os.getcwd()                                                  # Current working directory           
+    training_path      = working_folder + '/training/'                                # Path to KITTI training data
+    fourcc             = cv2.VideoWriter.fourcc(*"MJPG")                              # Object to write video
+    video_writer       = cv2.VideoWriter(video_name, fourcc, 1, (1920*2, 1080), True) # 1 FPS, 2K resolution (2x1080p side-by-side)
+    count_valid_frames = 0                                                            # Count of valid frames processed                                                      
+    start_frame        = frame                                                        # Save starting frame for video name
     
     
     while count_valid_frames < 100:
@@ -140,23 +141,23 @@ if __name__ == '__main__':
         # ----------------------------------------------------
         # Part B: Sensor Calibration and Projection
         # ----------------------------------------------------
-        # T0: Parse calibration (handled by load_kitti_calibration)
-        try:
+        
+        try: # T0: Parse calibration (handled by load_kitti_calibration)
             img    = load_kitti_image(img_file)
             lidar  = load_kitti_lidar_scan(velo_file)
             calib  = load_kitti_calibration(calib_file)
             labels = load_kitti_labels(label_file)
+            
         except FileNotFoundError as e:
             print(f"Error loading data. Check the `training_path` and file index: {e}")
             exit()
 
-        if len(labels) == 0:
-            print(f"No labels found for index (No Cars Detected) {frame}, skipping frame.")
+        if len(labels) == 0: # No labels for this frame, skip it
+            print(f"No labels (No Cars Detected) found for index  {frame}, skipping frame.")
             frame += 1
             continue
         
         get_labels(label_file)                      # Print labels for frame
-    
         h, w = len(img[:, 0, 0]), len(img[0, :, 0]) # T1-1: Get camera image width and height
 
         # T1-2, T1-3, T2, T3, T4: Run the projection function (transform, rectify, project, mask generation)
@@ -167,27 +168,26 @@ if __name__ == '__main__':
         # ----------------------------------------------------
         # T0, T1, T2, T3: Frustum Culling and Depth Gating
         lidar_clusters, Z_clusters = get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask) # Get lidar points within 2D bounding boxes
-        lidar_filter, Z_filter     = get_lidar_outliers(Z_clusters, lidar_clusters) # Filter lidar outliers based on 2 standard deviations from mean Z
+        lidar_filter, Z_filter     = remove_lidar_outliers(Z_clusters, lidar_clusters) # Filter lidar outliers based on 2 standard deviations from mean Z
         
         # ----------------------------------------------------
         # Part D: 3D Bounding Box Estimation & Visualization
         # ----------------------- -----------------------------
         # T2: Estimate 3D Box Parameters (AABB or OBB)
-        boxes = estimate_bounding_boxes(lidar_filter, obb=True)  # obb set to True returns OBB, False returns AABB
-        print("Estimated", len(boxes), "3D boxes")              # T3: Finalize and Report Box Parameters
+        boxes = estimate_bounding_boxes(lidar_filter, obb=False) # obb set to True returns OBB, False returns AABB
+        print("Estimated", len(boxes), "3D boxes")               # T3: Finalize and Report Box Parameters
 
         # T4: Visualization - 2D Image View and 3D Scene View
         lidar_frame = plot_lidar_3d_with_boxes_video(lidar_filter, boxes, lidar)
-
-         # Create single Matplotlib figure with two subplots for each Frame
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(38.4, 10.8))
+         
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(38.4, 10.8))  # Create single Matplotlib figure with two subplots for each Frame
         fig.suptitle(f'Frame: {frame}', fontsize=16)
         
         ax1 = project_boxes_to_image_video(boxes, calib, img, ax1)  # Plot 2D projection on first subplot
         ax2.imshow(lidar_frame)                                     # Plot 3D Lidar with bounding boxes on second subplot
         ax2.axis('off')                                             # Hide axes ticks       
         plt.tight_layout()                                          # Adjust layout to prevent overlap
-        fig.canvas.draw()                                           # Render the figure to a canvas                                
+        fig.canvas.draw()                                           # Render figure to canvas                                
        
         combined_frame = np.frombuffer(fig.canvas.tostring_argb(), dtype=np.uint8)          # Convert Matplotlib figure to BGR for OpenCV
         combined_frame = combined_frame.reshape(fig.canvas.get_width_height()[::-1] + (4,)) # Reshape to HxWx4
@@ -195,12 +195,15 @@ if __name__ == '__main__':
         combined_frame = cv2.cvtColor(combined_frame, cv2.COLOR_RGB2BGR)                    # Convert from RGB (Matplotlib) to BGR (OpenCV)
 
         video_writer.write(combined_frame) # Write the combined frame to video
-        
         plt.close(fig)                     # Close figure to free up memory
-        count_valid_frames += 1
-        frame              += 1
+        
+        count_valid_frames += 1            # Increment count of valid frames processed
+        frame              += 1            # Move to next frame index
   
-    video_writer.release()
+    video_writer.release()                 # Finalize and save video file after processing 100 valid frames
+    
+    updated_video_name = f"output_video_{start_frame}_to_{frame-1}.avi" # Update video name to reflect actual frames processed (account for skips)
+    os.rename(working_folder + '/' + video_name,  working_folder + '/' + updated_video_name)
 
 
     exit()

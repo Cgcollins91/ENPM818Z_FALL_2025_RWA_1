@@ -45,8 +45,8 @@ def get_file_path(training_path, file_index, type):
 
 def load_kitti_calibration(path):
     """
-    Loads KITTI calibration data from a .txt file into a dictionary.
-    Edited Zeid Kotbally provided function to convert matrices to homogenous
+    Loads KITTI calibration data from .txt file into dictionary.
+    Edited Zeid Kotbally provided function to convert matrices to homogenous.
     
     Args:
         path (str): The file path to the calibration file (.txt).
@@ -64,8 +64,8 @@ def load_kitti_calibration(path):
                 calib[key] = np.array([float(x) for x in value.strip().split()])
 
     # Reshape matrices to their correct dimensions
-    calib['P2'] = calib['P2'].reshape(3, 4)
-    calib['R0_rect'] = calib['R0_rect'].reshape(3, 3)
+    calib['P2']             = calib['P2'].reshape(3, 4)
+    calib['R0_rect']        = calib['R0_rect'].reshape(3, 3)
     calib['Tr_velo_to_cam'] = calib['Tr_velo_to_cam'].reshape(3, 4)
     
     # Pad R0_rect to Homogenous Form:
@@ -81,7 +81,13 @@ def load_kitti_calibration(path):
 
 def print_kitti_shapes(img, lidar, calib):
     """
-    Prints the required shapes to the console (T3, Deliverable)
+    Prints shapes of Image, LiDAR, and Calibration matrices for Part A (T3, Deliverable).
+    
+    Inputs:
+        img:    HxWx3 numpy array of RGB image
+        lidar:  Nx4 numpy array of lidar points (x,y,z,reflectance)
+        calib:  Dictionary with calibration matrices
+        
     """
     
     print("\n--- Part A: Console Log with Shapes ---")
@@ -97,7 +103,15 @@ def print_kitti_shapes(img, lidar, calib):
 
 def visualize_rgb(img, lidar, frame_idx):
     """
-    Generates the two required visualization figures for Part A (T4, Deliverable).
+    Generates two visualization figures for Part A (T4, Deliverable).
+    
+    1. Displays the RGB image using matplotlib.
+    2. Renders the raw point cloud in Open3D.
+    Inputs:
+        img:       HxWx3 numpy array of RGB image
+        lidar:     Nx4 numpy array of lidar points (x,y,z,reflectance)
+        frame_idx: Integer index of the current frame (for titles)
+        
     """
 
     # 1. RGB image
@@ -110,8 +124,7 @@ def visualize_rgb(img, lidar, frame_idx):
     # 2. Render the raw point cloud in Open3D
     try:
         pcd = o3d.geometry.PointCloud()
-        # Use only x, y, z columns
-        pcd.points = o3d.utility.Vector3dVector(lidar[:, :3])
+        pcd.points = o3d.utility.Vector3dVector(lidar[:, :3]) # Use only x, y, z columns (ignore reflectance)
         pcd.paint_uniform_color([0.5, 0.5, 0.5])  
 
         print("Opening Open3D viewer for raw point cloud....")
@@ -123,43 +136,59 @@ def visualize_rgb(img, lidar, frame_idx):
 
 def project_lidar_to_image(lidar, calib, w, h):
     """ 
-    Project unfiltered lidar points to the camera plane.
-    Get Z>0 mask and image bound masks, but do not apply.
+    Project lidar points to camera plane, Get Z>0 mask and image bound masks, but do not apply.
+    
+    Inputs:
+        lidar:       Nx4 numpy array of lidar points (x,y,z,reflectance)
+        calib:       Dictionary with calibration matrices
+        w:           Image width in pixels
+        h:           Image height in pixels
+    
+    Returns:
+        uv:          2xN numpy array of pixel coordinates in camera plane
+        Z_cam:       1xN numpy array of depth values in camera frame
+        bound_mask:  Boolean mask for points within image bounds
+        Z_mask:      Boolean mask for points with Z>0 in camera frame
     """
     
     # Convert LiDAR to Homogenous Nx4 Matrice:
     ones_col  = np.ones((len(lidar), 1))
-    X_h_velo  = np.hstack((lidar[:,:3], ones_col)).T
+    X_h_velo  = np.hstack((lidar[:,:3], ones_col)).T       # Extract x,y,z and convert to homogenous by adding column of ones, then transpose to 4xN
 
     # Part B, Task 2
-    X_h_cam  = np.dot(calib['Tr_velo_to_cam'], X_h_velo) 
-    X_h_rect = np.dot(calib['R0_rect'], X_h_cam)
-    Z_cam    = X_h_rect[2, :]
+    X_h_cam  = np.dot(calib['Tr_velo_to_cam'], X_h_velo)   # Apply Rigid Transform From LiDAR Frame to Camera Frame
+    X_h_rect = np.dot(calib['R0_rect'], X_h_cam)           # Apply Rectification (Rotation) From LiDAR Frame to Camera Frame
+    Z_cam    = X_h_rect[2, :]                              # Get LiDar Depth (Z) values in Camera Frame
     
-    Z_mask   = Z_cam > 0
+    Z_mask   = Z_cam > 0                                   # Create mask for points with depth (Z) > 0
 
-    Y = np.dot(calib['P2'], X_h_rect)
-
-    u = Y[0, :] / Y[2, :]
-    v = Y[1, :] / Y[2, :]
+    Y = np.dot(calib['P2'], X_h_rect)                      # Apply Camera Projection Matrix mappipng rectified camera frame 3-d points to pixels
+    u = Y[0, :] / Y[2, :]                                  # X Coordinate of projected LiDAR points in camera frame in pixels
+    v = Y[1, :] / Y[2, :]                                  # Y Coordinate of projected LiDAR points in camera frame in pixels
     
-    bound_mask = (0 <= u) & (u <= w) & (0 <= v) & (v <= h)
+    bound_mask = (0 <= u) & (u <= w) & (0 <= v) & (v <= h) # Create Mask for points within image bounds
 
-    uv = np.array((u, v))
+    uv = np.array((u, v))                                  # Combine u, v into 2xN array of pixel coordinates in camera plane
     
     return uv, Z_cam, bound_mask, Z_mask
 
 def visualize_depth_projection(uv, Z_cam, img, bound_mask, Z_mask, filter=True):
     """
-    Plots the image overlaid with projected LiDAR points,
-    color-coded by depth.
+    Plots image overlaid with LiDAR points projected to camera frame, color-coded by depth.
+    
+    Inputs:
+        uv:          2xN numpy array of lidar points projected to cameraplane in pixels
+        Z_cam:       1xN numpy array of depth values in camera frame
+        img:         HxWx3 numpy array of RGB image
+        bound_mask:  Boolean mask for points within image bounds
+        Z_mask:      Boolean mask for points with Z>0 in camera frame
+        filter:      Boolean flag to filter points outside image bounds and with Z<=0
     """
 
     if filter:
         uv    = uv[:, bound_mask & Z_mask]
         Z_cam = Z_cam[bound_mask & Z_mask]
 
-    # fig, (ax1, ax2) = plt.subplots(2, figsize=(10,10))
     fig, ax1 = plt.subplots(1, figsize=(12, 6))
     
     ax1.imshow(img)      # Plot camera RGB
@@ -172,8 +201,7 @@ def visualize_depth_projection(uv, Z_cam, img, bound_mask, Z_mask, filter=True):
         alpha=0.5        # Point Transparency
     )
     
-    # Add color bar legend for depth
-    cbar = fig.colorbar(scatter, ax=ax1) 
+    cbar = fig.colorbar(scatter, ax=ax1)   # Add color bar legend for depth
     cbar.set_label('Depth (m)') 
 
     plt.show()
@@ -181,8 +209,21 @@ def visualize_depth_projection(uv, Z_cam, img, bound_mask, Z_mask, filter=True):
 
 def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
     """
-    Get Lidar points that are within the file's labeled bounding boxes. 
-    Filters any depth points at 0 and lidar points outside of image bounds.
+    Get Lidar points within file's labeled bounding boxes by applying frustum culling.
+    Applies Z>0 and image bound masks.
+    
+    Inputs:
+        lidar:       Nx4 numpy array of lidar points (x,y,z,reflectance)
+        uv:          2xN numpy array of lidar points projected to camera plane in pixels
+        labels:      List of dictionaries with KITTI label data including 2D bounding boxes
+        Z_cam:       1xN numpy array of depth values in camera frame
+        Z_mask:      Boolean mask for points with Z>0 in camera frame
+        bound_mask:  Boolean mask for points within image bounds
+        
+    Returns:
+        lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes after applying Z>0 and image bound masks
+        Z_clusters:     List of numpy arrays of Z (depth) values for the LiDAR points in each cluster after applying Z>0 and image bound masks
+
     """
 
     Z_clusters     = []
@@ -194,7 +235,7 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
         u_min, v_min = bbox[0], bbox[1],
         u_max, v_max = bbox[2], bbox[3]
         
-        # Create mask of lidar points within bounding box
+        # Create mask of lidar points within bounding box (Apply Frustum Culling)
         u_mask   = (u_min <= uv[0, :]) & (uv[0, :] <= u_max)
         v_mask   = (v_min <= uv[1, :]) & (uv[1, :] <= v_max)
         uv_mask  = u_mask & v_mask
@@ -205,14 +246,6 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
         lidar_filter = lidar[Z_and_box_mask, :]
         Z_filter     = Z_cam[Z_and_box_mask]
 
-        # depth gating
-        median_depth = np.median(Z_filter)
-        depth_delta = 3
-        Z_depth_mask = ((median_depth - depth_delta) <= Z_filter) & (Z_filter <= (median_depth + depth_delta))
-
-        lidar_filter = lidar_filter[Z_depth_mask, :]
-        Z_filter = Z_filter[Z_depth_mask]
-
         Z_clusters.append(Z_filter)
         lidar_clusters.append(lidar_filter)
 
@@ -222,7 +255,10 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
 
 def plot_lidar_3d(lidar_clusters):
     """
-    Plot Lidar points in 3-D using open3D
+    Plot Lidar points in 3-D using open3D 
+    
+    Inputs:
+        lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
     """
 
     vis1 = o3d.visualization.Visualizer()
@@ -246,7 +282,12 @@ def plot_lidar_3d(lidar_clusters):
 def plot_hist(Z_clusters, lidar_clusters, color='red'):
     """
     Plot Histogram of Lidar X, Y, Z and Depth values.
-    Assumes Z_cluster and lidar_clusters are lists of numpy arrays
+    
+    Inputs:
+        Z_clusters:     List of numpy arrays of Z (depth) values for LiDAR points in each cluster
+        lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
+        color:          Color for histogram bars (default 'red')
+    
     """
     
     cluster_num = 0
@@ -254,7 +295,7 @@ def plot_hist(Z_clusters, lidar_clusters, color='red'):
         
         fig, axes = plt.subplots(nrows=2, ncols=2, figsize=(10, 10)) 
 
-        # Plot Histogram of LiDAR X values
+        # Plot Histogram of LiDAR X values 
         axes[0,0].hist(lidar_cluster[:,0], bins=50, color=color)
         axes[0,0].set_title(f"Cluster: {cluster_num} LiDAR Point X (m)")
         axes[0,0].set_xlabel('X (meters)')
@@ -286,7 +327,11 @@ def plot_hist(Z_clusters, lidar_clusters, color='red'):
 
 def visualize_2d_detections(img, labels):
     """
-    Plots the image with 2D bounding boxes overlaid.
+    Plots image with 2D bounding boxes overlaid.
+    
+    Inputs:
+        img:    HxWx3 numpy array of RGB image
+        labels: List of dictionaries with KITTI label data including 2D bounding boxes
     """
 
     fig, ax1 = plt.subplots(1, figsize=(12, 6))
@@ -305,13 +350,13 @@ def visualize_2d_detections(img, labels):
         facecolor='none'    # Bounding Box internal color
         )
         ax1.add_patch(rect)
-    ax1.set_title(f"2D Detection Boxes")
+    ax1.set_title("2D Detection Boxes")
     plt.show()
     
     
 def get_aabb_box(cluster):
     """
-    Compute Axis-Aligned Bounding Box (AABB) for a given LiDAR cluster.
+    Compute Axis-Aligned Bounding Box (AABB) for given LiDAR cluster.
     
     Inputs:
         cluster: Numpy array of lidar points within KITTI labels bounding box
@@ -341,6 +386,8 @@ def get_aabb_box(cluster):
 def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
     Compute 3D bounding boxes (AABB or OBB) for each LiDAR cluster.
+    For OBB, Principal Component Analysis (PCA) is used to determine orientation.
+    If PCA fails, defaults to AABB.
     
     Inputs:
         lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
@@ -391,7 +438,8 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
                     "box_obj" : obb,
                     "n_points": len(cluster[:])
                 }
-            except:
+                
+            except: # if PCA fails, default to AABB
                 print("Warning: Could not compute OBB for cluster, defaulting to AABB")
                 box = get_aabb_box(cluster)
                 
@@ -404,7 +452,7 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
 
 def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     """
-    Plot Lidar points in 3-D using open3D with bounding boxes
+    Plot Lidar clusters in 3-D using open3D with bounding boxes.
     
     Inputs:
         lidar_clusters: List of numpy arrays of lidar points within KITTI labels bounding boxes
@@ -414,24 +462,24 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
 
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name='3D Boxes', width=960, height=540, left=100, top=100)
-    cmap = plt.get_cmap("jet") 
+    cmap           = plt.get_cmap("jet") 
     cluster_colors = cmap(np.linspace(0, 1, len(lidar_clusters)))[:, :3]
     
     # Plot Background Lidar Points in Gray
-    pc_gray = o3d.geometry.PointCloud()
+    pc_gray        = o3d.geometry.PointCloud()
     pc_gray.points = o3d.utility.Vector3dVector(lidar[:, :3])
     pc_gray.paint_uniform_color([0.5, 0.5, 0.5])
 
     # Add LiDAR clusters within bounding boxes
     for i, cluster in enumerate(lidar_clusters):
-        pc = o3d.geometry.PointCloud()
+        pc        = o3d.geometry.PointCloud()
         pc.points = o3d.utility.Vector3dVector(cluster[:, :3])
         pc.paint_uniform_color(cluster_colors[i])
         vis.add_geometry(pc)
 
     # Add bounding boxes
     for i, box in enumerate(boxes):
-        bbox = box["box_obj"]
+        bbox       = box["box_obj"]
         bbox.color = cluster_colors[i]
         try:
             pc_gray = pc_gray.crop(bbox, invert=True)
@@ -445,10 +493,6 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
         # set default view
         # values found by manually zooming frame 100
         view_controller = vis.get_view_control()
-        #view_controller.set_zoom(0.027500000000000253)
-        #view_controller.set_front([ -0.89516371137141304, -0.44561928839813425, -0.010265459137232251 ])
-        #view_controller.set_up([ -0.0029690917564122133, -0.017068595148887471, 0.99984991251376598 ])
-        #view_controller.set_lookat([ 9.9614291969435094, 4.7740428233735352, 1.2060055116059714 ])
 
         view_controller.set_zoom(0.041333333333333319)
         view_controller.set_front([ -0.999828848674019, 0.012677640915529876, -0.01347407807616945 ])
@@ -464,16 +508,16 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
 
 def project_boxes_to_image(boxes, calib, img):
     """
-    Project 3D bounding boxes to camera image plane and plot.
+    Project 3D bounding boxes to camera frame and plot.
     
     Inputs:
         boxes: List of dictionaries with bounding box parameters and open3d box object
         calib: Dictionary with calibration matrices
-        img:   Camera image as HxWx3 numpy array
+        img:   HxWx3 numpy array of RGB image
         
     """
 
-    cmap = plt.get_cmap("jet") 
+    cmap       = plt.get_cmap("jet") 
     box_colors = cmap(np.linspace(0, 1, len(boxes)))[:, :3]
     
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -505,18 +549,17 @@ def project_boxes_to_image(boxes, calib, img):
             if depth[i] > 0 and depth[j] > 0:
                 ax.plot([u[i], u[j]], [v[i], v[j]], color=box_colors[box_i], linewidth=1.5)
 
-
     plt.title("Projected 3D Boxes on Image")
     plt.show()
 
 
-def get_lidar_outliers(Z_clusters, lidar_clusters):
+def remove_lidar_outliers(Z_clusters, lidar_clusters):
     """
-    Identify outlier points in a LiDAR cluster based on Z values.
-    Points that are more than 2 standard deviations away from the mean Z value are considered outliers.
+    Remove outlier points in LiDAR cluster based on Z values (depth).
+    Points more than 2 standard deviations away from mean Z value are removed and considered outliers.
     
     Inputs:
-        Z_cluster:      Numpy array of Z (depth) values for the LiDAR points in the cluster
+        Z_cluster:      Numpy array of Z (depth) values for the LiDAR points in cluster
         lidar_cluster:  Numpy array of LiDAR points within KITTI labels bounding box
     Returns:
         Z_filter:       Numpy array of filtered Z values (outliers removed)
@@ -601,8 +644,8 @@ if __name__ == '__main__':
     # T1-2, T1-3, T2, T3, T4: Run the projection function (transform, rectify, project, mask generation)
     uv, Z_cam, bound_mask, Z_mask = project_lidar_to_image(lidar, calib, w, h)
 
-    # T5: Validation (LiDAR points projected onto camera Image)
-    print("Visualizing LiDAR points projected onto camera Image....")
+    # T5: Validation (LiDAR points projected onto camera Frame)
+    print("Visualizing LiDAR points projected onto camera Frame....")
     visualize_depth_projection(uv, Z_cam, img, bound_mask, Z_mask, filter=True)
     print("--------------------------------------\n")
 
@@ -611,7 +654,7 @@ if __name__ == '__main__':
     # ----------------------------------------------------
     print("\n--- Part C: 2D Detection and 3D Data Association ---")
 
-    # T0, T1, T2, T3: Frustum Culling and Depth Gating
+    # T0, T1, T2, T3: Frustum Culling 
     lidar_clusters, Z_clusters = get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask)
     print(f"Isolated {len(lidar_clusters)} 3D clusters (objects detected).")
 
@@ -636,8 +679,7 @@ if __name__ == '__main__':
 
     # T1: Input and Pre-processing 
     lidar_clusters, Z_clusters = get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask)
-
-    lidar_filter, Z_filter = get_lidar_outliers(Z_clusters, lidar_clusters)
+    lidar_filter, Z_filter     = remove_lidar_outliers(Z_clusters, lidar_clusters) # Remove outliers based on 2 standard deviations from mean Z
     
 
     # T2: Estimate 3D Box Parameters (AABB or OBB)

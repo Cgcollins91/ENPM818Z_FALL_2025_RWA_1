@@ -268,6 +268,34 @@ def plot_lidar_3d(lidar_clusters):
     
 
 #  Part D – 3D Bounding Box Estimation & Visualization
+def get_aabb_box(cluster):
+    """
+    Compute Axis-Aligned Bounding Box (AABB) for a given LiDAR cluster.
+    
+    Inputs:
+        cluster: Numpy array of lidar points within KITTI labels bounding box
+        
+    Returns:
+        box:     Dictionary with bounding box parameters and open3d box object
+    """
+
+    pcd        = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
+
+    min_values = pcd.get_min_bound()
+    max_values = pcd.get_max_bound()
+    dims = max_values - min_values
+    center = min_values + dims/2
+    aabb_box = o3d.geometry.AxisAlignedBoundingBox(min_values, max_values)
+    box = {
+        "type"    : "AABB",
+        "center_m": center,
+        "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
+        "yaw_rad" : 0.0,
+        "box_obj" : aabb_box
+    }
+    
+    return box
 
 def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
@@ -280,63 +308,56 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
     Returns:
         boxes:          List of dictionaries with bounding box parameters and open3d box object
     """
-    boxes = []
 
+    boxes = []
     for cluster in lidar_clusters:
         if obb:
-            cluster_3d = cluster[:, :3] # Isolate X, Y, Z component (ignore reflectance)
-            
-            # Get Mean and Covariance of Cluster:
-            centroid   = np.mean(cluster_3d, axis=0)
-            cov_matrix = np.cov(cluster_3d, rowvar=False)
+            try:
+                cluster_3d = cluster[:, :3] # Isolate X, Y, Z component (ignore reflectance)
+                
+                # Get Mean and Covariance of Cluster:
+                centroid   = np.mean(cluster_3d, axis=0)
+                cov_matrix = np.cov(cluster_3d, rowvar=False)
 
-            # Get principle components -- Eigenvectors / Eigenvalues
-            eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)    
-            
-            # Sort Eigenvectors by magnitude of eigenvalues to ensure primary axis is axis with largest variance
-            sort_indices    = np.argsort(eigenvalues)[::-1]
-            rotation_matrix = eigenvectors[:, sort_indices]
-            
-            if np.linalg.det(rotation_matrix) < 0: # Ensure Right Handed Coordinate System, if det <0, rotation matrix is reflection
-                rotation_matrix[:, -1] *= -1       # Flip Direction of last column if left-handed, flipping single axis of left-handed converts back to right-handed
-                    
-            primary_axis = rotation_matrix[:, 0]   # After sorting by eigenvalue our primary axis is first column
-            
-            # Project Cluster points onto PCA axes
-            projected_points = (cluster_3d - centroid) @ rotation_matrix
+                # Get principle components -- Eigenvectors / Eigenvalues
+                eigenvalues, eigenvectors = np.linalg.eigh(cov_matrix)    
+                
+                # Sort Eigenvectors by magnitude of eigenvalues to ensure primary axis is axis with largest variance
+                sort_indices    = np.argsort(eigenvalues)[::-1]
+                rotation_matrix = eigenvectors[:, sort_indices]
 
-            # Get bounding box min / max after projection along each axes
-            min_bound = np.min(projected_points, axis=0)
-            max_bound = np.max(projected_points, axis=0)
-            dims      = max_bound - min_bound
-            
-            # Create open3d OBB object:
-            obb = o3d.geometry.OrientedBoundingBox(centroid, rotation_matrix, dims)
-            
-            box = {                       # Create JSON output parmeters for each cluster
-                "type"    : "OBB",
-                "center_m": centroid,
-                "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
-                "yaw_rad" : float(np.arctan2(primary_axis[1], primary_axis[0])),
-                "box_obj" : obb,
-                "n_points": len(cluster[:])
-            }
-            
+                if np.linalg.det(rotation_matrix) < 0: # Ensure Right Handed Coordinate System, if det <0, rotation matrix is reflection
+                    rotation_matrix[:, -1] *= -1       # Flip Direction of last column if left-handed, flipping single axis of left-handed converts back to right-handed
+
+                primary_axis = rotation_matrix[:, 0]   # After sorting by eigenvalue our primary axis is first column
+
+                # Project Cluster points onto PCA axes
+                projected_points = (cluster_3d - centroid) @ rotation_matrix
+
+                # Get bounding box min / max after projection along each axes
+                min_bound = np.min(projected_points, axis=0)
+                max_bound = np.max(projected_points, axis=0)
+                dims      = max_bound - min_bound
+                
+                # Create open3d OBB object:
+                obb = o3d.geometry.OrientedBoundingBox(centroid, rotation_matrix, dims)
+                
+                box = {                       # Create JSON output parmeters for each cluster
+                    "type"    : "OBB",
+                    "center_m": centroid,
+                    "dims_m"  : {"l": dims[0], "w": dims[1], "h": dims[2]},
+                    "yaw_rad" : float(np.arctan2(primary_axis[1], primary_axis[0])),
+                    "box_obj" : obb,
+                    "n_points": len(cluster[:])
+                }
+            except:
+                print("Warning: Could not compute OBB for cluster, defaulting to AABB")
+                box = get_aabb_box(cluster)
+                
         else:
-            # PLEASE UPDATE FOR AABB
-            pcd        = o3d.geometry.PointCloud()
-            pcd.points = o3d.utility.Vector3dVector(cluster[:, :3])
-            aabb_box = pcd.get_axis_aligned_bounding_box()
-            box = {
-                "type"    : "AABB",
-                "center_m": aabb_box.get_center().tolist(),
-                "dims_m"  : (aabb_box.get_extent()).tolist(),
-                "yaw_rad" : 0.0,
-                "box_obj" : aabb_box
-            }
+            box = get_aabb_box(cluster)
 
         boxes.append(box)
-        
         
     return boxes
 
@@ -443,7 +464,7 @@ def project_boxes_to_image(boxes, calib, img):
 working_folder = os.getcwd()
 training_path  = working_folder + '/training/'
 
-file_index     = 200
+file_index     = 2
 
 img_file   = get_file_path(training_path, file_index, 'image_2')
 calib_file = get_file_path(training_path, file_index, 'calib')
