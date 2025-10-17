@@ -3,6 +3,7 @@ import cv2
 import open3d as o3d
 import matplotlib.pyplot as plt
 import os
+import argparse
 import matplotlib.patches as patches
 from starter import  load_kitti_image, load_kitti_lidar_scan
 from detector import load_kitti_labels
@@ -612,8 +613,17 @@ if __name__ == '__main__':
     # Configuration (Set this path to your KITTI training directory)
     working_folder = os.getcwd()
     training_path  = working_folder + '/training/'
-
-    file_index  = int(input("Enter File Index (0-7480): "))
+    # Argument parsing
+    parser = argparse.ArgumentParser(description="KITTI 3D Detection Pipeline")
+    parser.add_argument(
+        "--idx",
+        type=int,
+        required=True,
+        help="Dataset frame index (0 - 7480)"
+    )
+    args = parser.parse_args()
+    file_index = args.idx
+    # file_index  = int(input("Enter File Index (0-7480): "))
     print("Click Exit on each plot generated to continue script execution")
 
     # ----------------------------------------------------
