@@ -1,4 +1,3 @@
-
 import numpy as np
 import cv2
 import open3d as o3d
@@ -7,6 +6,7 @@ import os
 import matplotlib.patches as patches
 from starter import  load_kitti_image, load_kitti_lidar_scan
 from detector import load_kitti_labels
+
 
 def get_labels(label_path):
     """
@@ -43,6 +43,7 @@ def get_file_path(training_path, file_index, type):
     
     return file_path
 
+
 def load_kitti_calibration(path):
     """
     Loads KITTI calibration data from .txt file into dictionary.
@@ -78,6 +79,7 @@ def load_kitti_calibration(path):
     calib['Tr_velo_to_cam'] = np.vstack((calib['Tr_velo_to_cam'], pad_column.T))
     
     return calib
+
 
 def print_kitti_shapes(img, lidar, calib):
     """
@@ -134,6 +136,7 @@ def visualize_rgb(img, lidar, frame_idx):
     except Exception as e:
         print(f"Could not open Open3D viewer (required dependency): {e}")
 
+
 def project_lidar_to_image(lidar, calib, w, h):
     """ 
     Project lidar points to camera plane, Get Z>0 mask and image bound masks, but do not apply.
@@ -171,6 +174,7 @@ def project_lidar_to_image(lidar, calib, w, h):
     uv = np.array((u, v))                                  # Combine u, v into 2xN array of pixel coordinates in camera plane
     
     return uv, Z_cam, bound_mask, Z_mask
+
 
 def visualize_depth_projection(uv, Z_cam, img, bound_mask, Z_mask, filter=True):
     """
@@ -245,6 +249,13 @@ def get_bounding_box_lidar_points(lidar, uv, labels, Z_cam, Z_mask, bound_mask):
 
         lidar_filter = lidar[Z_and_box_mask, :]
         Z_filter     = Z_cam[Z_and_box_mask]
+
+        # Additional Depth Filtering: Filter for points within 3 meters of median depth
+        Z_median          = np.median(Z_filter)
+        depth_gate_filter = ( (Z_median - 3) <= Z_filter) & (Z_filter <= (Z_median + 3))
+
+        Z_filter     = Z_filter[depth_gate_filter]
+        lidar_filter = lidar_filter[depth_gate_filter, :]
 
         Z_clusters.append(Z_filter)
         lidar_clusters.append(lidar_filter)
@@ -383,6 +394,7 @@ def get_aabb_box(cluster):
     
     return box
 
+
 def estimate_bounding_boxes(lidar_clusters, obb=False):
     """
     Compute 3D bounding boxes (AABB or OBB) for each LiDAR cluster.
@@ -450,6 +462,7 @@ def estimate_bounding_boxes(lidar_clusters, obb=False):
         
     return boxes
 
+
 def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
     """
     Plot Lidar clusters in 3-D using open3D with bounding boxes.
@@ -505,6 +518,7 @@ def plot_lidar_3d_with_boxes(lidar_clusters, boxes, lidar):
         vis.update_renderer()
 
     vis.destroy_window()
+
 
 def project_boxes_to_image(boxes, calib, img):
     """

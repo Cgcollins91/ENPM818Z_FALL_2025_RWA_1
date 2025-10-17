@@ -3,7 +3,6 @@ import cv2
 import open3d as o3d
 import matplotlib.pyplot as plt
 import os
-
 from starter  import load_kitti_image, load_kitti_lidar_scan
 from detector import load_kitti_labels
 from pipeline import get_labels, get_file_path, load_kitti_calibration, remove_lidar_outliers
@@ -125,7 +124,6 @@ if __name__ == '__main__':
     count_valid_frames = 0                                                            # Count of valid frames processed                                                      
     start_frame        = frame                                                        # Save starting frame for video name
     
-    
     while count_valid_frames < 100:
         # ----------------------------------------------------
         # Part A: Setup & Data Loading
@@ -180,8 +178,8 @@ if __name__ == '__main__':
         # T4: Visualization - 2D Image View and 3D Scene View
         lidar_frame = plot_lidar_3d_with_boxes_video(lidar_filter, boxes, lidar)
          
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(38.4, 10.8))  # Create single Matplotlib figure with two subplots for each Frame
-        fig.suptitle(f'Frame: {frame}', fontsize=16)
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(38.4, 10.8))  # Create Single Matplotlib figure with two subplots for each Frame
+        fig.suptitle(f'Frame: {frame}', fontsize=16)                # Add overall title to figure
         
         ax1 = project_boxes_to_image_video(boxes, calib, img, ax1)  # Plot 2D projection on first subplot
         ax2.imshow(lidar_frame)                                     # Plot 3D Lidar with bounding boxes on second subplot
